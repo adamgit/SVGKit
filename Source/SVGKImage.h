@@ -37,22 +37,23 @@
 
 #import <UIKit/UIKit.h>
 
-#import "SVGLength.h"
-#import "SVGDocument.h"
-#import "SVGElement.h"
-#import "SVGSVGElement.h"
+#import "SVGKParser.h" // needed for asynchronous loading method-signature
 
-#import "SVGKParser.h"
-#import "SVGKSource.h"
-#import "SVGKParseResult.h"
+@class SVGDocument;
+@class SVGSVGElement;
+@class SVGKSource;
+@class SVGKParseResult;
 
 #define ENABLE_GLOBAL_IMAGE_CACHE_FOR_SVGKIMAGE_IMAGE_NAMED 1 // if ENABLED, then ALL instances created with imageNamed: are shared, and are NEVER RELEASED
 
 @class SVGDefsElement;
 
+@class SVGKImage; // needed for typedef below
+typedef void (^SVGKImageAsynchronousLoadingDelegate)(SVGKImage* loadedImage);
+
 @interface SVGKImage : NSObject // doesn't extend UIImage because Apple made UIImage immutable
 {
-#ifdef ENABLE_GLOBAL_IMAGE_CACHE_FOR_SVGKIMAGE_IMAGE_NAMED
+#if ENABLE_GLOBAL_IMAGE_CACHE_FOR_SVGKIMAGE_IMAGE_NAMED
     BOOL cameFromGlobalCache;
 #endif
 }
@@ -69,16 +70,44 @@
 @property (nonatomic, retain, readonly) SVGDocument* DOMDocument;
 @property (nonatomic, retain, readonly) SVGSVGElement* DOMTree; // needs renaming + (possibly) replacing by DOMDocument
 @property (nonatomic, retain, readonly) CALayer* CALayerTree;
-#ifdef ENABLE_GLOBAL_IMAGE_CACHE_FOR_SVGKIMAGE_IMAGE_NAMED
+#if ENABLE_GLOBAL_IMAGE_CACHE_FOR_SVGKIMAGE_IMAGE_NAMED
 @property (nonatomic, retain, readonly) NSString* nameUsedToInstantiate;
 #endif
 
 #pragma mark - methods to quick load an SVG as an image
-+ (SVGKImage *)imageNamed:(NSString *)name;      // load from main bundle
+/**
+ This is the preferred method for loading SVG files.
+ 
+ Like Apple's [UIImage imageNamed:] method, it has a global cache of loaded SVG files to greatly
+ increase performance. Unlike UIImage, SVGKImage's tend to be light in memory usage, but if needed,
+ you can disable this at compile-time by setting ENABLE_GLOBAL_IMAGE_CACHE_FOR_SVGKIMAGE_IMAGE_NAMED to 0.
+ 
+ As of SVGKit 1.2.0, this method:
+ 
+ - Finds the SVG file (adding .svg extension if missing) in the App's sandboxed Documents folder
+ - If that's missing, it finds the same file in the App's Bundle (i.e. the files stored at compile-time by Xcode, and shipped as the app)
+ - Creates an SVGKSource so that you can later inspect exactly where it found the file
+ */
++ (SVGKImage *)imageNamed:(NSString *)name;
+/**
+ Almost identical to imageNamed: except that it performs the parse in a separate thread.
+ 
+ Returns an SVGKParser object that you can cancel, or inspect for progress (using parser.currentParseRun)
+ 
+ UNLESS the image was already loaded, and a cached version can be returned - in which case,
+ returns nil and immmediately calls the completion block
+ */
++(SVGKParser *) imageAsynchronouslyNamed:(NSString *)name onCompletion:(SVGKImageAsynchronousLoadingDelegate) blockCompleted;
 + (SVGKImage *)imageWithContentsOfFile:(NSString *)path;
-#if TARGET_OS_IPHONE // doesn't exist on OS X's Image class
-+ (SVGKImage *)imageWithData:(NSData *)data;
-#endif
+/**
+ PREFERABLY: this is our only method, apart from the convenience "imageNamed"
+ 
+ If you need to create an SVG e.g. diretly from raw bytes, then you MUST use
+ this method and ADDITIONALLY wrap your data into an SVGKSource.
+ 
+ This is because SVG's cannot parse correctly without the metadata about where
+ the file came from: e.g. they cannot process relative links, cross-references, etc.
+ */
 + (SVGKImage*) imageWithSource:(SVGKSource *)newSource; // if you have custom source's you want to use
 
 - (id)initWithContentsOfFile:(NSString *)path;
@@ -187,7 +216,7 @@
  NB: this is frequently used if you have to add custom SVGKParserExtensions to parse an
  SVG which contains custom tags
  */
-- (id)initWithParsedSVG:(SVGKParseResult *)parseResult;
+- (id)initWithParsedSVG:(SVGKParseResult *)parseResult fromSource:(SVGKSource*) parseSource;
 
 
 /*! Creates a new instance each time you call it. This should ONLY be used if you specifically need to duplicate
@@ -234,32 +263,23 @@
  because it no longer needs one)
  
  Useful for extracting individual features from an SVG
+ 
+ Note that this ONLY clones the layer, does NOT include its sublayers. If you want to get a copy that includes
+ the sublayers, use [self newCopyPositionedAbsoluteOfLayer:withSubLayers:TRUE]
  */
 -(CALayer*) newCopyPositionedAbsoluteOfLayer:(CALayer *)originalLayer;
 
+/**
+ As for newCopyPositionedAbsoluteOfLayer:, but allows you to choose between 1 layer only (default)
+ or a recursive copy which includes all sublayers.
+ 
+ Only the root/parent layer will be positioned absolute - all the sublayers will still be relatively-positioned
+ within their parents.
+ */
+-(CALayer*) newCopyPositionedAbsoluteOfLayer:(CALayer *)originalLayer withSubLayers:(BOOL) recursive;
+
 /*! returns all the individual CALayer's in the full layer tree, indexed by the SVG identifier of the SVG node that created that layer */
 - (NSDictionary*) dictionaryOfLayers;
-
-/**
- Higher-performance version of .UIImage property (the property uses this method, but you can tweak the parameters for better performance / worse accuracy)
- 
- NB: you can get BETTER performance using the exportNSDataAntiAliased: version of this method, becuase you bypass Apple's slow code for making UIImage objects
- 
- @param shouldAntialias = Apple defaults to TRUE, but turn it off for small speed boost
- @param multiplyFlatness = how many pixels a curve can be flattened by (Apple's internal setting) to make it faster to render but less accurate
- @param interpolationQuality = Apple internal setting, c.f. Apple docs for CGInterpolationQuality
- */
--(UIImage *) exportUIImageAntiAliased:(BOOL) shouldAntialias curveFlatnessFactor:(CGFloat) multiplyFlatness interpolationQuality:(CGInterpolationQuality) interpolationQuality;
-/**
- Highest-performance version of .UIImage property (this minimizes memory usage and can lead to large speed-ups e.g. when using SVG images as textures with OpenGLES)
- 
- NB: we could probably achieve get even higher performance in OpenGL by sidestepping NSData entirely and using raw byte arrays (should result in zero-copy).
- 
- @param shouldAntialias = Apple defaults to TRUE, but turn it off for small speed boost
- @param multiplyFlatness = how many pixels a curve can be flattened by (Apple's internal setting) to make it faster to render but less accurate
- @param interpolationQuality = Apple internal setting, c.f. Apple docs for CGInterpolationQuality
- */
--(NSData*) exportNSDataAntiAliased:(BOOL) shouldAntialias curveFlatnessFactor:(CGFloat) multiplyFlatness interpolationQuality:(CGInterpolationQuality) interpolationQuality flipYaxis:(BOOL) flipYaxis;
 
 #pragma mark - Useful bonus methods, will probably move to a different class at some point
 

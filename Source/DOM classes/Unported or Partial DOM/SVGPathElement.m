@@ -45,7 +45,7 @@
         
         if (command.length > 1) {
             // Take only one char (it can happen that multiple commands are consecutive, as "ZM" - so we only want to get the "Z")
-            const int tooManyChars = command.length-1;
+            const NSUInteger tooManyChars = command.length-1;
             command = [command substringToIndex:1];
             [dataScanner setScanLocation:([dataScanner scanLocation] - tooManyChars)];
         }
@@ -143,6 +143,18 @@
                                                                             path:path
                                                                       relativeTo:CGPointZero
                                                                       isRelative:FALSE];
+                        lastCoordinate = lastCurve.p;
+					} else if ([@"t" isEqualToString:command]) {
+                        lastCurve = [SVGKPointsAndPathsParser readSmoothQuadraticCurvetoCommand:commandScanner
+																				  path:path
+																			relativeTo:lastCoordinate
+																		 withPrevCurve:lastCurve];
+                        lastCoordinate = lastCurve.p;
+                    } else if ([@"T" isEqualToString:command]) {
+                        lastCurve = [SVGKPointsAndPathsParser readSmoothQuadraticCurvetoCommand:commandScanner
+																				  path:path
+																			relativeTo:CGPointZero
+																		 withPrevCurve:lastCurve];
                         lastCoordinate = lastCurve.p;
                     } else {
                         DDLogWarn(@"unsupported command %@", command);

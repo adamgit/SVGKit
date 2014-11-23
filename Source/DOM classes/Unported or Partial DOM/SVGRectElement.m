@@ -6,7 +6,7 @@
 
 @interface SVGRectElement ()
 
-#if __IPHONE_OS_VERSION_MAX_ALLOWED < __IPHONE_7_0
+#if __IPHONE_OS_VERSION_MAX_ALLOWED < __IPHONE_7_0 
 void CGPathAddRoundedRect (CGMutablePathRef path, CGRect rect, CGFloat radiusX, CGFloat radiusY);
 #endif
 
@@ -109,10 +109,9 @@ void CGPathAddRoundedRect (CGMutablePathRef path, CGRect rect, CGFloat radiusX, 
 			radiusXPixels = radiusYPixels;
 		
 		CGPathAddRoundedRect(path,
-#if __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_7_0
-                             nil,
+							 nil,
 #endif
-                             rect, radiusXPixels, radiusYPixels);
+							 rect, radiusXPixels, radiusYPixels);
 	}
 	self.pathForShapeInRelativeCoords = path;
 	CGPathRelease(path);

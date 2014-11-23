@@ -40,8 +40,8 @@
 
 @synthesize identifier = _identifier;
 @synthesize xmlbase;
-@synthesize rootOfCurrentDocumentFragment;
-@synthesize viewportElement;
+@synthesize rootOfCurrentDocumentFragment = _rootOfCurrentDocumentFragment;
+@synthesize viewportElement = _viewportElement;
 @synthesize stringValue = _stringValue;
 
 @synthesize className; /**< CSS class, from SVGStylable interface */
@@ -137,21 +137,54 @@
 					currentAncestor = currentAncestor.parentNode;
 			}
 			
-			NSAssert( firstAncestorThatIsAnyKindOfSVGElement != nil, @"This node has no valid SVG tags as ancestor, but it's not an <svg> tag, so this is an impossible SVG file" );
-			
-			
-			if( [firstAncestorThatIsAnyKindOfSVGElement isKindOfClass:[SVGSVGElement class]] )
-				self.rootOfCurrentDocumentFragment = (SVGSVGElement*) firstAncestorThatIsAnyKindOfSVGElement;
+			if( newParent == nil )
+			{
+				/** We've set the parent to nil, thereby "orphaning" this Node and the tree underneath it.
+				 
+				 This usually happens when you remove a Node from its parent.
+				 
+				 I'm not sure what the spec expects at that point - you have a valid DOM tree, but *not* a valid SVG fragment;
+				 or maybe it is valid, for some special-case kind of SVG fragment definition?
+				 
+				 TODO: this may also relate to SVG <use> nodes and instancing: if you're fixing that code, check this comment to see if you can improve it.
+				 
+				 For now: we simply "do nothing but set everything to nil"
+				 */
+				DDLogWarn( @"SVGElement has had its parent set to nil; this makes the element and tree beneath it no-longer-valid SVG data; this may require fix-up if you try to re-add that SVGElement or any of its children back to an existing/new SVG tree");
+				self.rootOfCurrentDocumentFragment = nil;
+			}
 			else
-				self.rootOfCurrentDocumentFragment = firstAncestorThatIsAnyKindOfSVGElement.rootOfCurrentDocumentFragment;
-			
-			[self reCalculateAndSetViewportElementReferenceUsingFirstSVGAncestor:firstAncestorThatIsAnyKindOfSVGElement];
-			
+			{
+				NSAssert( firstAncestorThatIsAnyKindOfSVGElement != nil, @"This node has no valid SVG tags as ancestor, but it's not an <svg> tag, so this is an impossible SVG file" );
+				
+				
+				if( [firstAncestorThatIsAnyKindOfSVGElement isKindOfClass:[SVGSVGElement class]] )
+					self.rootOfCurrentDocumentFragment = (SVGSVGElement*) firstAncestorThatIsAnyKindOfSVGElement;
+				else
+					self.rootOfCurrentDocumentFragment = firstAncestorThatIsAnyKindOfSVGElement.rootOfCurrentDocumentFragment;
+				
+				[self reCalculateAndSetViewportElementReferenceUsingFirstSVGAncestor:firstAncestorThatIsAnyKindOfSVGElement];
+				
 #if DEBUG_SVG_ELEMENT_PARSING
-			DDLogVerbose(@"viewport Element = %@ ... for node/element = %@", self.viewportElement, self.tagName);
+				DDLogVerbose(@"viewport Element = %@ ... for node/element = %@", self.viewportElement, self.tagName);
 #endif
+			}
 		}
 	}
+}
+
+- (void)setRootOfCurrentDocumentFragment:(SVGSVGElement *)root {
+    _rootOfCurrentDocumentFragment = root;
+    for (Node *child in self.childNodes)
+        if ([child isKindOfClass:SVGElement.class])
+            ((SVGElement *) child).rootOfCurrentDocumentFragment = root;
+}
+
+- (void)setViewportElement:(SVGElement *)viewport {
+    _viewportElement = viewport;
+    for (Node *child in self.childNodes)
+        if ([child isKindOfClass:SVGElement.class])
+            ((SVGElement *) child).viewportElement = viewport;
 }
 
 - (void)dealloc {
@@ -300,9 +333,10 @@
 				{
 					CGFloat degrees = [[parameterStrings objectAtIndex:0] floatValue];
 					CGFloat radians = degrees * M_PI / 180.0;
-					
-					CGAffineTransform nt = CGAffineTransformMakeRotation(radians);
-					selfTransformable.transform = CGAffineTransformConcat( nt, selfTransformable.transform ); // Apple's method appears to be backwards, and not doing what Apple's docs state
+                    
+					selfTransformable.transform = CGAffineTransformRotate(selfTransformable.transform, radians);
+//					CGAffineTransform nt = CGAffineTransformMakeRotation(radians);
+//					selfTransformable.transform = CGAffineTransformConcat( nt, selfTransformable.transform ); // Apple's method appears to be backwards, and not doing what Apple's docs state
 				}
 				else if( [parameterStrings count] == 3)
 				{
@@ -310,11 +344,15 @@
 					CGFloat radians = degrees * M_PI / 180.0;
 					CGFloat centerX = [[parameterStrings objectAtIndex:1] floatValue];
 					CGFloat centerY = [[parameterStrings objectAtIndex:2] floatValue];
-					CGAffineTransform nt = CGAffineTransformIdentity;
-					nt = CGAffineTransformConcat( nt, CGAffineTransformMakeTranslation(centerX, centerY) );
-					nt = CGAffineTransformConcat( nt, CGAffineTransformMakeRotation(radians) );
-					nt = CGAffineTransformConcat( nt, CGAffineTransformMakeTranslation(-1.0 * centerX, -1.0 * centerY) );
-					selfTransformable.transform = CGAffineTransformConcat( nt, selfTransformable.transform ); // Apple's method appears to be backwards, and not doing what Apple's docs state
+                    
+                    selfTransformable.transform = CGAffineTransformTranslate(selfTransformable.transform, centerX, centerY);
+                    selfTransformable.transform = CGAffineTransformRotate(selfTransformable.transform, radians);
+                    selfTransformable.transform = CGAffineTransformTranslate(selfTransformable.transform, -1.0 * centerX, -1.0 * centerY);
+//					CGAffineTransform nt = CGAffineTransformIdentity;
+//					nt = CGAffineTransformConcat( nt, CGAffineTransformMakeTranslation(centerX, centerY) );
+//					nt = CGAffineTransformConcat( nt, CGAffineTransformMakeRotation(radians) );
+//					nt = CGAffineTransformConcat( nt, CGAffineTransformMakeTranslation(-1.0 * centerX, -1.0 * centerY) );
+//					selfTransformable.transform = CGAffineTransformConcat( nt, selfTransformable.transform ); // Apple's method appears to be backwards, and not doing what Apple's docs state
 					} else
 					{
 					DDLogError(@"[%@] ERROR: input file is illegal, has an SVG matrix transform attribute without the required 1 or 3 parameters. Item = %@, transform attribute value = %@", [self class], transformString, value );
@@ -389,6 +427,64 @@
 	return self;
 }
 
+- (NSRange) nextSelectorRangeFromText:(NSString *) selectorText startFrom:(NSRange) previous
+{
+    NSCharacterSet *alphaNum = [NSCharacterSet alphanumericCharacterSet];
+	NSCharacterSet *selectorStart = [NSCharacterSet characterSetWithCharactersInString:@"#."];
+    
+    NSInteger start = -1;
+    NSUInteger end = 0;
+    for( NSUInteger i = previous.location + previous.length; i < selectorText.length; i++ )
+    {
+        unichar c = [selectorText characterAtIndex:i];
+        if( [selectorStart characterIsMember:c] )
+        {
+            start = i;
+        }
+        else if( [alphaNum characterIsMember:c] )
+        {
+            if( start == -1 )
+                start = i;
+            end = i;
+        }
+        else if( start != -1 )
+        {
+            break;
+        }
+    }
+    
+    if( start != -1 )
+        return NSMakeRange(start, end + 1 - start);
+    else
+        return NSMakeRange(NSNotFound, -1);
+}
+
+- (BOOL) selector:(NSString *)selector appliesTo:(SVGElement *) element
+{
+    if( [selector characterAtIndex:0] == '.' )
+        return element.className != nil && [element.className isEqualToString:[selector substringFromIndex:1]];
+    else if( [selector characterAtIndex:0] == '#' )
+        return element.identifier != nil && [element.identifier isEqualToString:[selector substringFromIndex:1]];
+    else
+        return element.nodeName != nil && [element.nodeName isEqualToString:selector];
+}
+
+- (BOOL) styleRule:(CSSStyleRule *) styleRule appliesTo:(SVGElement *) element
+{
+    NSRange nextRule = [self nextSelectorRangeFromText:styleRule.selectorText startFrom:NSMakeRange(0, 0)];
+    if( nextRule.location == NSNotFound )
+        return NO;
+    
+    while( nextRule.location != NSNotFound )
+    {
+        if( ![self selector:[styleRule.selectorText substringWithRange:nextRule] appliesTo:element] )
+            return NO;
+        
+        nextRule = [self nextSelectorRangeFromText:styleRule.selectorText startFrom:nextRule];
+    }
+    return YES;
+}
+
 #pragma mark - CSS cascading special attributes
 -(NSString*) cascadedValueForStylableProperty:(NSString*) stylableProperty
 {
@@ -415,33 +511,30 @@
 			return localStyleValue;
 		else
 		{
-			if( self.className != nil )
-			{
-				/** we have a locally declared CSS class; let's go hunt for it in the document's stylesheets */
-				
-				@autoreleasepool /** DOM / CSS is insanely verbose, so this is likely to generate a lot of crud objects */
-				{
-					for( StyleSheet* genericSheet in self.rootOfCurrentDocumentFragment.styleSheets.internalArray ) // because it's far too much effort to use CSS's low-quality iteration here...
-					{
-						if( [genericSheet isKindOfClass:[CSSStyleSheet class]])
-						{
-							CSSStyleSheet* cssSheet = (CSSStyleSheet*) genericSheet;
-							
-							for( CSSRule* genericRule in cssSheet.cssRules.internalArray)
-							{
-								if( [genericRule isKindOfClass:[CSSStyleRule class]])
-								{
-									CSSStyleRule* styleRule = (CSSStyleRule*) genericRule;
-									
-									if( [styleRule.selectorText isEqualToString:self.className] )
-									{
-										return [styleRule.style getPropertyValue:stylableProperty];
-									}
-								}
-							}
-						}
-					}
-				}
+            /** we have a locally declared CSS class; let's go hunt for it in the document's stylesheets */
+            
+            @autoreleasepool /** DOM / CSS is insanely verbose, so this is likely to generate a lot of crud objects */
+            {
+                for( StyleSheet* genericSheet in self.rootOfCurrentDocumentFragment.styleSheets.internalArray ) // because it's far too much effort to use CSS's low-quality iteration here...
+                {
+                    if( [genericSheet isKindOfClass:[CSSStyleSheet class]])
+                    {
+                        CSSStyleSheet* cssSheet = (CSSStyleSheet*) genericSheet;
+                        
+                        for( CSSRule* genericRule in cssSheet.cssRules.internalArray)
+                        {
+                            if( [genericRule isKindOfClass:[CSSStyleRule class]])
+                            {
+                                CSSStyleRule* styleRule = (CSSStyleRule*) genericRule;
+                                
+                                if( [self styleRule:styleRule appliesTo:self] )
+                                {
+                                    return [styleRule.style getPropertyValue:stylableProperty];
+                                }
+                            }
+                        }
+                    }
+                }
 			}
 			
 			/** either there's no class *OR* it found no match for the class in the stylesheets */

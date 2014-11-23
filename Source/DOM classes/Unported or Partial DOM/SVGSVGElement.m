@@ -33,8 +33,10 @@
 @synthesize currentView;
 @synthesize currentScale;
 @synthesize currentTranslate;
+@synthesize source;
 
-@synthesize viewBox = _viewBox;
+@synthesize viewBox = _viewBox; // each SVGElement subclass that conforms to protocol "SVGFitToViewBox" has to re-synthesize this to work around bugs in Apple's Objective-C 2.0 design that don't allow @properties to be extended by categories / protocols
+@synthesize preserveAspectRatio; // each SVGElement subclass that conforms to protocol "SVGFitToViewBox" has to re-synthesize this to work around bugs in Apple's Objective-C 2.0 design that don't allow @properties to be extended by categories / protocols
 
 #pragma mark - NON SPEC, violating, properties
 
@@ -47,9 +49,11 @@
     [height release];
     [contentScriptType release];
     [contentStyleType release];
+    self.preserveAspectRatio = nil;
     self.currentView = nil;
     self.currentTranslate = nil;
     self.styleSheets = nil;
+    self.source = nil;
 	[super dealloc];	
 }
 
@@ -162,15 +166,24 @@
 	if( [[self getAttribute:@"viewBox"] length] > 0 )
 	{
 		NSArray* boxElements = [[self getAttribute:@"viewBox"] componentsSeparatedByString:@" "];
-		
+		if ([boxElements count] < 2) {
+            /* count should be 4 -- maybe they're comma separated like (x,y,w,h) */
+            boxElements = [[self getAttribute:@"viewBox"] componentsSeparatedByString:@","];
+        }
 		_viewBox = SVGRectMake([[boxElements objectAtIndex:0] floatValue], [[boxElements objectAtIndex:1] floatValue], [[boxElements objectAtIndex:2] floatValue], [[boxElements objectAtIndex:3] floatValue]);
 	}
 	else
 	{
 		self.viewBox = SVGRectUninitialized(); // VERY IMPORTANT: we MUST make it clear this was never initialized, instead of saying its 0,0,0,0 !		
 	}
-		DDLogVerbose(@"[%@] WARNING: SVG spec says we should calculate the 'intrinsic aspect ratio'. Some badly-made SVG files work better if you do this and then post-multiply onto the specified viewBox attribute ... BUT they ALSO require that you 're-center' them inside the newly-created viewBox; and the SVG Spec DOES NOT SAY you should do that. All examples so far were authored in Inkscape, I think, so ... I think it's a serious bug in Inkscape that has tricked people into making incorrect SVG files. For example, c.f. http://en.wikipedia.org/wiki/File:BlankMap-World6-Equirectangular.svg", [self class]);
-        //osx logging
+	
+    [SVGHelperUtilities parsePreserveAspectRatioFor:self];
+
+	if( stringWidth == nil || stringWidth.length < 1 )
+		self.width = nil; // i.e. undefined
+	else
+		self.width = [SVGLength svgLengthFromNSString:[self getAttribute:@"width"]];
+	    //osx logging
 #if TARGET_OS_IPHONE        
         DDLogVerbose(@"[%@] DEBUG INFO: set document viewBox = %@", [self class], NSStringFromCGRect( CGRectFromSVGRect(self.viewBox)));
 #else
@@ -180,10 +193,10 @@
 	
 }
 
-- (SVGElement *)findFirstElementOfClass:(Class)class {
+- (SVGElement *)findFirstElementOfClass:(Class)classParameter {
 	for (SVGElement *element in self.childNodes)
 	{
-		if ([element isKindOfClass:class])
+		if ([element isKindOfClass:classParameter])
 			return element;
 	}
 	
@@ -211,5 +224,18 @@
 	 previously were rendering with strange offsets at the top level
 	 */
 }
+
+#pragma mark - elements REQUIRED to implement the spec but not included in SVG Spec due to bugs in the spec writing!
+
+-(double)aspectRatioFromWidthPerHeight
+{
+	return [self.height pixelsValue] == 0 ? 0 : [self.width pixelsValue] / [self.height pixelsValue];
+}
+
+-(double)aspectRatioFromViewBox
+{	
+	return  self.viewBox.height == 0 ? 0 : self.viewBox.width / self.viewBox.height;
+}
+
 
 @end

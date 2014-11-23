@@ -15,12 +15,8 @@
 	return self;
 }
 
-+ (SVGKSource*)sourceFromData:(NSData*)data {
-	NSInputStream* stream = [NSInputStream inputStreamWithData:data];
-	[stream open];
-	
-	SVGKSource* s = [[[SVGKSource alloc] initWithInputSteam:stream] autorelease];
-	return s;
+- (SVGKSource *)sourceFromRelativePath:(NSString *)path {
+    return nil;
 }
 
 - (void)dealloc {
