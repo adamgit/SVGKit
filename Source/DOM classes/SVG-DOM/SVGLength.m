@@ -81,9 +81,12 @@
 	NSAssert(FALSE, @"Not supported yet");
 }
 
--(void) convertToSpecifiedUnits:(SVG_LENGTH_TYPE) unitType
+-(void) convertToSpecifiedUnits:(SVG_LENGTH_TYPE) newUnitType
 {
-	NSAssert(FALSE, @"Not supported yet");
+	float newFloatValue = [self.internalCSSPrimitiveValue getFloatValue:[SVGLength CSSPrimitiveTypeFromSVGLengthType:unitType]];
+	
+	self.value = newFloatValue;
+	unitType = newUnitType;
 }
 
 /** Apple calls this method when the class is loaded; that's as good a time as any to calculate the device / screen's PPI */
@@ -123,6 +126,35 @@ static float cachedDevicePixelsPerInch;
 }
 
 #pragma mark - secret methods needed to provide an implementation on ObjectiveC
+
++(CSSPrimitiveType) CSSPrimitiveTypeFromSVGLengthType:(SVG_LENGTH_TYPE) svgLengthType
+{
+	switch( svgLengthType )
+	{
+		case SVG_LENGTHTYPE_CM:
+			return CSS_CM;
+		case SVG_LENGTHTYPE_EMS:
+			return CSS_EMS;
+		case SVG_LENGTHTYPE_EXS:
+			return CSS_EXS;
+		case SVG_LENGTHTYPE_IN:
+			return CSS_IN;
+		case SVG_LENGTHTYPE_MM:
+			return CSS_MM;
+		case SVG_LENGTHTYPE_PC:
+			return CSS_PC;
+		case SVG_LENGTHTYPE_PERCENTAGE:
+			return CSS_PERCENTAGE;
+		case SVG_LENGTHTYPE_PT:
+			return CSS_PT;
+		case SVG_LENGTHTYPE_PX:
+			return CSS_PX;
+		case SVG_LENGTHTYPE_NUMBER:
+			return CSS_NUMBER;
+		default:
+			return CSS_UNKNOWN;
+	}
+}
 
 +(float) pixelsPerInchForCurrentDevice
 {

@@ -143,9 +143,20 @@
 	else
 		self.height = [SVGLength svgLengthFromNSString:[self getAttribute:@"height"]];
 	
+	/**
+	 Important:
+	 
+	    - Generate "actual pixel / abasolute" svglengths for width and height.
+	 
+	 This is non-trivial: if the SVG tag is using a percentage width or height, it gets tricky
+	 But we need an actual, guaranteed "absolute" value, for us to continue.
+	 */
+	SVGLength* resolvedWidth = [SVGHelperUtilities SVGLengthFromLengthInSVGTree:[self getAttributeNode:@"width"]];
+	SVGLength* resolvedHeight = [SVGHelperUtilities SVGLengthFromLengthInSVGTree:[self getAttributeNode:@"height"]];
+	
 	/* set the frameRequestedViewport appropriately (NB: spec doesn't allow for this but it REQUIRES it to be done and saved!) */
-	if( self.width != nil && self.height != nil )
-		self.requestedViewport = SVGRectMake( 0, 0, [self.width pixelsValue], [self.height pixelsValue] );
+	if( resolvedWidth != nil && resolvedHeight != nil )
+		self.requestedViewport = SVGRectMake( 0, 0, [resolvedWidth pixelsValue], [resolvedHeight pixelsValue] );
 	else
 		self.requestedViewport = SVGRectUninitialized();
 	
@@ -179,10 +190,6 @@
 	
     [SVGHelperUtilities parsePreserveAspectRatioFor:self];
 
-	if( stringWidth == nil || stringWidth.length < 1 )
-		self.width = nil; // i.e. undefined
-	else
-		self.width = [SVGLength svgLengthFromNSString:[self getAttribute:@"width"]];
 	    //osx logging
 #if TARGET_OS_IPHONE        
         DDLogVerbose(@"[%@] DEBUG INFO: set document viewBox = %@", [self class], NSStringFromCGRect( CGRectFromSVGRect(self.viewBox)));

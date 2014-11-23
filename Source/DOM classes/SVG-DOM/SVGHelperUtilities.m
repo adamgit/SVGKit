@@ -559,4 +559,75 @@
     }
 }
 
++(SVGLength*) SVGLengthFromLengthInSVGTree:(Attr*) domAttr
+{
+	NSString* attributeName = domAttr.name;
+	SVGLength* attributeLength = [SVGLength svgLengthFromNSString: domAttr.value];
+	
+	switch( attributeLength.unitType )
+	{
+		case SVG_LENGTHTYPE_EMS:
+		case SVG_LENGTHTYPE_EXS:
+			/** not supported - but according to spec, must use CSS spec, and resolve against "the computed value of the 'font-size' property of the element on which it is used"
+			 
+			 c.f. http://www.w3.org/TR/CSS2/syndata.html#length-units
+			 */
+			NSAssert(FALSE, @"Unsupported: em and ex lengths (not implemented yet!)");
+			return nil;
+			break;
+			
+		case SVG_LENGTHTYPE_PERCENTAGE:
+		{
+			/**
+			 We look at the SVG Node (which is itself the parent of the domAttribute)
+			 
+			 EITHER:
+			 
+			 - Node is an <SVG> tag: special rules from spec; complicated
+			 - Parent is an SVGElement: calc relative to parent
+			 - Parent is non-SVG: not specified in SVG; infer from CSS, and "guess"
+			 - Parent is nil: illegal SVG fragment!
+			 */
+			SVGElement* nodeSVG = (SVGElement*) domAttr.parentNode;
+			NSAssert(nodeSVG != nil, @"Attempted to calculate the relative size of an attribute that is not attached to an SVGElement / DOM Node; don't do that. It's imposible");
+			SVGElement* parentSVG = (SVGElement*) nodeSVG.parentNode;
+			NSAssert(parentSVG != nil, @"Attempted to calculate the relative size of an attribute on a Node/SVGElement that has no parent SVGElement / DOM Node; don't do that. It's imposible");
+			
+			if( [nodeSVG isKindOfClass:[SVGSVGElement class]] ) // <SVG> tags have "special" rules
+			{
+				NSAssert(FALSE, @"Intelligent code goes here... (do things like use the ViewBox to guess a width/height)");
+			}
+			else if( parentSVG == nil )
+			{
+				return nil;
+			}
+			else if( [parentSVG isKindOfClass:[SVGElement class]]) // the main case
+			{
+				Attr* parentDOMAttr = [parentSVG getAttributeNode:attributeName];
+				NSAssert(parentDOMAttr != nil, @"Tried to calculate a relative '%@' on node '%@', but parent node '%@' has no attribute with that name", attributeName, nodeSVG, parentSVG);
+				
+				SVGLength* resolvedParentLength = [self SVGLengthFromLengthInSVGTree:parentDOMAttr];
+				
+				float pixelsValue = (attributeLength.value/100.0) * resolvedParentLength.pixelsValue;
+				SVGLength* absoluteLength = [SVGLength svgLengthFromNSString:[NSString stringWithFormat:@"%fpx", pixelsValue]];
+				
+				/** Make sure it's in the same units as the thing it was converted from */
+				[absoluteLength convertToSpecifiedUnits:resolvedParentLength.unitType];
+				
+				return absoluteLength;
+			}
+			else
+			{
+				NSAssert(FALSE, @"Unsupported: calculating percentage length when parent is not an SVG element (not implemented yet!)");
+				return nil;
+			}
+		}
+			break;
+			
+		default:
+			/** If length is absolute, can return it directly */
+			return attributeLength;
+	}
+}
+
 @end
